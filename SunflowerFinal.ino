@@ -1,182 +1,185 @@
-#include <Servo.h> // include Servo library
+#include <Servo.h>
 
-Servo horizontal; // horizontal servo
-int horizAng = 90; // 90; // stand horizontal servo
-int horizMax = 180;
+int leftSensor = 2;
+int rightSensor = 1;
+
+int backSensor = 3;
+int frontSensor = 0;
+
+int minHorizSpin = 0;
+int maxHorizSpin = 180;
+float horizSpinSpeed = 2;
+int horizLightThreashold = 300;
+
+int minVertiSpin = 65; // this is fully open
+int maxVertiSpin = 180; // this is fully closed
+float vertiSpinSpeed = 1.5;
+
+int minSolarSpin = 20;
+int maxSolarSpin = 110;
+float solarSpinSpeed = 1.5;
+int solarLightThreashold = 120;
+
+int horizAng = 0;
+int horizMax = 110;
 int horizMin = 0;
-int horizPin = 11;
+int horizPin = 11;  
 
-Servo vertical; // vertical servo
-int vertAng = 50; // 90; // stand vertical servo
-int vertMax = 100;
-int vertMin = 21;
-int vertPin = 9;
-
-
-// LDR pin connections
-// name = analogpin;
-const int front_port = 0; //LDR top left - BOTTOM LEFT <--- BDG
-const int back_port = 3; //LDR top rigt - BOTTOM RIGHT
-const int left_port = 1; //LDR down left - TOP LEFT
-const int right_port = 2; //ldr down rigt - TOP RIGHT
-
+// Servos
+Servo solarServo; 
+Servo vertiServo; 
+Servo horizServo; 
+int state = 0;
+// Pins 
 int buttonPin = 12;
-const int BUTTON_ON = 0;
-const int BUTTON_OFF = 1;
 
-// 0: vertical movement only
-// 1: horizontal movement only
-int stage;
-const int VERTICAL_STAGE = 0;
-const int HORIZONTAL_STAGE = 1;
+const int Opening = 0;
+const int Following = 1;
+const int Closing = 2;
+
+// 0: Rising
+// 1: Following
+// 2: Lowering
+byte stepCycle;
 
 void setup() {
+  Serial.println("Welcome");
   Serial.begin(9600);
-
-  // servo connections
-  //   name.attach(pin);
-
-  vertical.attach(vertPin);
-  vertical.write(vertAng);
-  horizontal.attach(horizPin);
-  horizontal.write(horizAng);
-  delay(1000);
-  horizontal.detach();
-
-  stage = VERTICAL_STAGE;
-
-  delay(100);
-
-  Serial.println("welcome");
+  vertiServo.attach(10); 
+  solarServo.attach(9); 
+  horizServo.attach(11); 
+  centerSolarServo();
+  delay(5000);
+  state = Closing;
 }
+int buttonState;
+int prevButtonState;
 void loop() {
-  //// Cycle stages if needed
-  if (isButtonOn()) {
-    switch (stage) {
-      case VERTICAL_STAGE:
-        stage = HORIZONTAL_STAGE;
-        break;
-      case HORIZONTAL_STAGE:
-        stage = VERTICAL_STAGE;
-        break;
-    }
-    Serial.println("Stage cycled");
-    delay(1000);
+  buttonState = digitalRead(buttonPin);
+  Serial.println( true ==(prevButtonState == LOW && buttonState == HIGH));
+  if(prevButtonState == LOW && buttonState == HIGH){
+    // a button is pressed
+    state += 1;
+    state = state % 3;
   }
+  prevButtonState = buttonState;
+  Serial.print("State: ");
+  Serial.println(state);
+  Serial.println("-----------------------------------------");
+  switch(state){
 
-  Serial.print("Button status: ");
-  Serial.println(isButtonOn());
-  Serial.print("Stage: ");
-  Serial.println(stage);
-
-  switch (stage) {
-    case VERTICAL_STAGE:
-
-      doVerticalStuff();
+    case Following:
+      Serial.println("Following");
+      followLight();
       break;
-    case HORIZONTAL_STAGE:
-      doHorizontalStuff();
+    case Opening:
+      Serial.println("Opening");
+      open_();
+      break;
+    case Closing:
+      Serial.println("Closing");
+      close_();
       break;
   }
-}
-
-
-boolean isButtonOn() {
-  return digitalRead(buttonPin) == BUTTON_ON;
-}
-
-
-void doHorizontalStuff() {
-  horizontal.attach(horizPin);
-  for (int pos = 0; pos <= 90; pos += 1) { // goes from 0 degrees to 180 degrees
-    // in steps of 1 degree
-    horizontal.write(pos);              // tell servo to go to position in variable 'pos'
-    delay(15);                       // waits 15ms for the servo to reach the position
-  }
-  delay(1000);
-  for (int pos = 90; pos >= 0; pos -= 1) { // goes from 180 degrees to 0 degrees
-    horizontal.write(pos);              // tell servo to go to position in variable 'pos'
-    delay(15);                       // waits 15ms for the servo to reach the position
-  }
-  horizontal.detach();
 
 }
 
-void doVerticalStuff() {
+void centerSolarServo(){
+  // 65 is the in between point
+   for(int i =63; i<=65; i++){
+     solarServo.write(i);   
+   }
+   for(int i =65; i>=63; i--){
+     solarServo.write(i);   
+   }
+}
 
-  int back = analogRead(back_port); // top right
-  int front = analogRead(front_port); // top left
-  int left = analogRead(left_port); // down left
-  int right = analogRead(right_port); // down right
-  int maxNumber = 0; // store the hightest value as an integer index of vals
-  int vals[4];
-  vals[0] = front;
-  vals[1] = -1;
-  vals[2] = -1;
-  vals[3] = back;
-  Serial.print("F: ");
-  Serial.print(front);
-  Serial.print(" ");
-  Serial.print("B: ");
-  Serial.print(back);
-  Serial.print(" ");
-  Serial.print("L: ");
-  Serial.print(left);
-  Serial.print(" ");
-  Serial.print("R: ");  
-  Serial.print(right);
-  Serial.println();
+void followLight(){
+  followLightSolar();
+  followLightHoriz(); 
 
-  for (int i = 0; i < 4; i++) { // get max number
-    if (vals[i] >= maxNumber) {
-      maxNumber = vals[i]; // set the index
+}
+
+void followLightSolar(){
+  float backValue = analogRead(backSensor);
+  float frontValue = analogRead(frontSensor);
+  Serial.print("front: ");
+  Serial.print(frontValue);
+  Serial.print(" back: ");
+  Serial.println(backValue);
+  
+  if(abs(backValue - frontValue) >= solarLightThreashold){
+    int change = 0;
+    if(max(backValue, frontValue) == backValue){
+      change = -solarSpinSpeed;
+    }else{
+      change = solarSpinSpeed;
+    }
+    Serial.print("Moving: ");
+    Serial.println(change);
+    
+    int angle = solarServo.read() + change;
+    if(angle <= maxSolarSpin || angle >= minSolarSpin){
+      // inside range
+      solarServo.write(angle);
+    }else{
+      Serial.println("max or min reached.");
     }
   }
+}
 
-  Serial.println(maxNumber);
-  int horiz_change = 0;
-  int vert_change = 0;
-  if(back == maxNumber){
-      // back greatest
-      Serial.println("Back is  the greatest");
-      vert_change += 4;
-  }else if(front == maxNumber){
-      // front greatest
-      Serial.println("Front is the greatest");
-      vert_change -= 4;
-  }else if(left == maxNumber){
-      // left greatest
-      Serial.println("Left is the greatest");
-      horiz_change -= 10; // move towards the greater between (front or back)
-  }
-    else if (right == maxNumber){
-      // right greatest
-      horiz_change += 10; // move towards the greater between (front or back)
-      Serial.println("Right is the greatest");
-  }
+boolean isButtonPressed() {
+  return digitalRead(buttonPin) == LOW;
+}
 
-  if (vertAng + vert_change > vertMax) {
-    vertAng = vertMax;
-    vert_change = 0;
-    Serial.println("stopping too high");
-  } else if (vertAng + vert_change < vertMin) {
-    vert_change = 0;
-    vertAng = vertMin;
-    Serial.println("stopping too low");
-  }
-  Serial.print("H: ");
-  Serial.println(horiz_change);
-  if (abs(vals[0] - vals[1]) > 50) {
-    vertAng += vert_change;
-    Serial.print("Changing by V: ");
-    Serial.println(vert_change);
-    Serial.println("Angle: ");
-    Serial.println(vertAng);
-  }
-  vertical.write(vertAng);
-  Serial.print(vertAng);
-  Serial.print("  ");
-  Serial.println(vertical.read());
-  Serial.println("--------------------------");
+void detachServos(){
+  solarServo.detach();
+  horizServo.detach();
+}
 
+void attachServos(){
+  solarServo.attach(9);
+  horizServo.attach(11);
+}
+
+void open_() {
+  detachServos();
+  vertiServo.attach(10);
+  for(int pos = vertiServo.read(); pos < minVertiSpin; pos++) {
+    vertiServo.write(pos);
+    delay(20);
+  }
+  vertiServo.detach();
+  attachServos();
+  state = Following;
+  delay(2000);
+}
+
+void close_(){
+  centerSolarServo();
+  Serial.println(solarServo.read());
+  delay(100);
+  detachServos();
+  vertiServo.attach(10);
+  for(int pos = vertiServo.read(); pos > maxVertiSpin; pos--) {
+    vertiServo.write(pos);
+    delay(20);
+  }
+  vertiServo.detach();
+  attachServos();
+}
+
+void followLightHoriz(){
+  float spin1 = analogRead(leftSensor);
+  float spin2 = analogRead(rightSensor);
+  Serial.print("moving: ");
+  Serial.print(spin1); 
+  Serial.print(" ");
+  Serial.println(spin2 );
+  if(abs(spin1 - spin2) >= horizLightThreashold){
+    horizServo.write(horizServo.read()+horizSpinSpeed);
+    if(horizServo.read() >= maxHorizSpin || horizServo.read() <= minHorizSpin){
+      horizSpinSpeed *= -1;
+    }
+  }
 }
